@@ -3,39 +3,38 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: const String.fromEnvironment('SUPABASE_URL'),
-    anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
-  );
+  await Supabase.initialize(url: const String.fromEnvironment('SUPABASE_URL'), anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'));
   runApp(const AttendanceApp());
 }
 
 class AttendanceApp extends StatelessWidget {
   const AttendanceApp({super.key});
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-    debugShowCheckedModeBanner: false,
-    title: 'نظام الدوام',
-    theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
-    home: const Directionality(textDirection: TextDirection.rtl, child: AttendancePage()),
-  );
+  @override Widget build(BuildContext context) => MaterialApp(debugShowCheckedModeBanner:false,theme:ThemeData(useMaterial3:true,colorSchemeSeed:Colors.blue),home:const Directionality(textDirection:TextDirection.rtl,child:AttendancePage()));
 }
 
 class AttendancePage extends StatefulWidget {
   const AttendancePage({super.key});
-  @override State<AttendancePage> createState() => _AttendancePageState();
+  @override State<AttendancePage> createState()=>_AttendancePageState();
 }
 
 class _AttendancePageState extends State<AttendancePage> {
-  final employee = TextEditingController();
-  DateTime start = DateTime(2026,7,26), end = DateTime(2026,8,25);
-  final Map<String, TimeOfDay?> ins = {}, outs = {};
-  String message = '';
-  String key(DateTime d) => '${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
-  List<DateTime> get dates { final r=<DateTime>[]; for(var d=start; !d.isAfter(end); d=d.add(const Duration(days:1))) r.add(d); return r; }
-  int mins(TimeOfDay? a, TimeOfDay? b){ if(a==null||b==null)return 0; var x=a.hour*60+a.minute,y=b.hour*60+b.minute; if(y<=x)y+=1440; return y-x; }
-  int get total => dates.where((d)=>d.weekday!=DateTime.friday).fold(0,(s,d)=>s+mins(ins[key(d)],outs[key(d)]));
-  Future<void> pick(DateTime d,bool entry) async { final t=await showTimePicker(context: context, initialTime: entry?const TimeOfDay(hour:6,minute:0):const TimeOfDay(hour:14,minute:0)); if(t!=null)setState(()=>entry?ins[key(d)]=t:outs[key(d)]=t); }
-  Future<void> save() async { if(employee.text.trim().isEmpty){setState(()=>message='اكتب اسم الموظف');return;} final rows=dates.where((d)=>d.weekday!=DateTime.friday).where((d)=>ins[key(d)]!=null||outs[key(d)]!=null).map((d)=>{'employee_name':employee.text.trim(),'work_date':key(d),'check_in':ins[key(d)]==null?null:'${ins[key(d)]!.hour.toString().padLeft(2,'0')}:${ins[key(d)]!.minute.toString().padLeft(2,'0')}:00','check_out':outs[key(d)]==null?null:'${outs[key(d)]!.hour.toString().padLeft(2,'0')}:${outs[key(d)]!.minute.toString().padLeft(2,'0')}:00'}).toList(); await Supabase.instance.client.from('attendances').upsert(rows,onConflict:'employee_name,work_date'); setState(()=>message='تم الحفظ في Supabase'); }
-  @override Widget build(BuildContext context){ return Scaffold(appBar:AppBar(title:const Text('نظام حساب دوام الموظفين')),body:ListView(padding:const EdgeInsets.all(16),children:[TextField(controller:employee,decoration:const InputDecoration(labelText:'اسم الموظف',border:OutlineInputBorder())),const SizedBox(height:12),Wrap(spacing:12,runSpacing:12,children:[Card(child:Padding(padding:const EdgeInsets.all(16),child:Text('إجمالي الحضور: ${total~/60}س ${total%60}د'))),Card(child:Padding(padding:const EdgeInsets.all(16),child:Text('أيام العمل: ${(total/480).toStringAsFixed(6)}'))),FilledButton(onPressed:save,child:const Text('حفظ في Supabase')),Text(message)]),const SizedBox(height:12),...dates.map((d){final friday=d.weekday==DateTime.friday,m=mins(ins[key(d)],outs[key(d)]);return Card(child:ListTile(title:Text('${key(d)}${friday?' — الجمعة':''}'),subtitle:friday?const Text('إجازة الجمعة'):Text(m==0?'لم يتم الإدخال':'${m~/60}س ${m%60}د = ${(m/480).toStringAsFixed(6)} يوم'),trailing:friday?null:Wrap(spacing:8,children:[OutlinedButton(onPressed:()=>pick(d,true),child:Text(ins[key(d)]?.format(context)??'الحضور')),OutlinedButton(onPressed:()=>pick(d,false),child:Text(outs[key(d)]?.format(context)??'الانصراف'))])));})])); }
+  final employee=TextEditingController();
+  DateTime start=DateTime(2026,7,26),end=DateTime(2026,8,25);
+  final Map<String,TimeOfDay?> ins={},outs={};
+  String shift='morning',message=''; int lateGrace=15,earlyGrace=5,defaultLate=15,defaultEarly=5;
+  String key(DateTime d)=>'${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
+  List<DateTime> get dates{final r=<DateTime>[];for(var d=start;!d.isAfter(end);d=d.add(const Duration(days:1)))r.add(d);return r;}
+  int tmin(TimeOfDay? t)=>t==null?0:t.hour*60+t.minute;
+  int worked(TimeOfDay? a,TimeOfDay? b){if(a==null||b==null)return 0;var x=tmin(a),y=tmin(b);if(y<=x)y+=1440;return y-x;}
+  Map<String,int> analyze(DateTime d){if(d.weekday==DateTime.friday)return{'worked':0,'late':0,'early':0,'status':0};final i=ins[key(d)],o=outs[key(d)];if(i==null&&o==null)return{'worked':0,'late':0,'early':0,'status':1};if(i==null||o==null)return{'worked':0,'late':0,'early':0,'status':2};final m=worked(i,o);if(shift=='flexible')return{'worked':m,'late':0,'early':0,'status':3};final si=shift=='morning'?360:840,so=shift=='morning'?840:1320;var ai=tmin(i),ao=tmin(o);if(ao<=ai)ao+=1440;final rawLate=(ai-si).clamp(0,9999),rawEarly=(so-ao).clamp(0,9999);return{'worked':m,'late':rawLate>lateGrace?rawLate:0,'early':rawEarly>earlyGrace?rawEarly:0,'status':3};}
+  int get total=>dates.fold(0,(s,d)=>s+analyze(d)['worked']!);
+  int get totalLate=>dates.fold(0,(s,d)=>s+analyze(d)['late']!);
+  int get totalEarly=>dates.fold(0,(s,d)=>s+analyze(d)['early']!);
+  int get absent=>dates.where((d)=>analyze(d)['status']==1).length;
+  int get pending=>dates.where((d)=>analyze(d)['status']==2).length;
+  String fmt(TimeOfDay? t)=>t==null?'': '${t.hour.toString().padLeft(2,'0')}:${t.minute.toString().padLeft(2,'0')}:00';
+  Future<void> pick(DateTime d,bool entry) async {final def=shift=='evening'?(entry?const TimeOfDay(hour:14,minute:0):const TimeOfDay(hour:22,minute:0)):(entry?const TimeOfDay(hour:6,minute:0):const TimeOfDay(hour:14,minute:0));final t=await showTimePicker(context:context,initialTime:def);if(t!=null)setState(()=>entry?ins[key(d)]=t:outs[key(d)]=t);}
+  Future<void> load() async {if(employee.text.trim().isEmpty)return;final db=Supabase.instance.client;final g=await db.from('app_settings').select().eq('id',1).maybeSingle();final p=await db.from('employee_policies').select().eq('employee_name',employee.text.trim()).maybeSingle();final a=await db.from('attendances').select().eq('employee_name',employee.text.trim()).gte('work_date',key(start)).lte('work_date',key(end));setState((){defaultLate=(g?['default_late_grace']??15) as int;defaultEarly=(g?['default_early_grace']??5) as int;shift=(p?['shift_type']??'morning') as String;lateGrace=(p?['late_grace']??defaultLate) as int;earlyGrace=(p?['early_grace']??defaultEarly) as int;ins.clear();outs.clear();for(final r in a){final d=DateTime.parse(r['work_date']);if(r['check_in']!=null){final x=r['check_in'].toString().split(':');ins[key(d)]=TimeOfDay(hour:int.parse(x[0]),minute:int.parse(x[1]));}if(r['check_out']!=null){final x=r['check_out'].toString().split(':');outs[key(d)]=TimeOfDay(hour:int.parse(x[0]),minute:int.parse(x[1]));}}message='تم التحميل';});}
+  Future<void> save() async {if(employee.text.trim().isEmpty){setState(()=>message='اكتب اسم الموظف');return;}final db=Supabase.instance.client;await db.from('app_settings').upsert({'id':1,'default_late_grace':defaultLate,'default_early_grace':defaultEarly});await db.from('employee_policies').upsert({'employee_name':employee.text.trim(),'shift_type':shift,'late_grace':lateGrace,'early_grace':earlyGrace},onConflict:'employee_name');final rows=dates.where((d)=>d.weekday!=DateTime.friday).where((d)=>ins[key(d)]!=null||outs[key(d)]!=null).map((d)=>{'employee_name':employee.text.trim(),'work_date':key(d),'check_in':ins[key(d)]==null?null:fmt(ins[key(d)]),'check_out':outs[key(d)]==null?null:fmt(outs[key(d)])}).toList();if(rows.isNotEmpty)await db.from('attendances').upsert(rows,onConflict:'employee_name,work_date');setState(()=>message='تم حفظ الدوام والسياسة');}
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('نظام حساب دوام الموظفين')),body:ListView(padding:const EdgeInsets.all(16),children:[TextField(controller:employee,decoration:const InputDecoration(labelText:'اسم الموظف',border:OutlineInputBorder())),const SizedBox(height:12),Wrap(spacing:12,runSpacing:12,children:[DropdownButton<String>(value:shift,items:const [DropdownMenuItem(value:'morning',child:Text('صباحي 06:00–14:00')),DropdownMenuItem(value:'evening',child:Text('مسائي 14:00–22:00')),DropdownMenuItem(value:'flexible',child:Text('مرن'))],onChanged:(v)=>setState(()=>shift=v!)),SizedBox(width:150,child:TextFormField(initialValue:'$lateGrace',decoration:const InputDecoration(labelText:'سماح التأخير'),keyboardType:TextInputType.number,onChanged:(v)=>setState(()=>lateGrace=int.tryParse(v)??0))),SizedBox(width:170,child:TextFormField(initialValue:'$earlyGrace',decoration:const InputDecoration(labelText:'سماح الانصراف المبكر'),keyboardType:TextInputType.number,onChanged:(v)=>setState(()=>earlyGrace=int.tryParse(v)??0))),SizedBox(width:150,child:TextFormField(initialValue:'$defaultLate',decoration:const InputDecoration(labelText:'الافتراضي للتأخير'),keyboardType:TextInputType.number,onChanged:(v)=>defaultLate=int.tryParse(v)??0)),SizedBox(width:170,child:TextFormField(initialValue:'$defaultEarly',decoration:const InputDecoration(labelText:'الافتراضي للمبكر'),keyboardType:TextInputType.number,onChanged:(v)=>defaultEarly=int.tryParse(v)??0)),FilledButton(onPressed:load,child:const Text('تحميل')),FilledButton(onPressed:save,child:const Text('حفظ')),OutlinedButton(onPressed:()=>setState((){lateGrace=defaultLate;earlyGrace=defaultEarly;}),child:const Text('استخدام الافتراضي'))]),const SizedBox(height:12),Wrap(spacing:12,children:[Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('الحضور: ${total~/60}س ${total%60}د'))),Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('الأيام: ${(total/480).toStringAsFixed(6)}'))),Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('التأخير: $totalLate د'))),Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('المبكر: $totalEarly د'))),Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('غياب: $absent | معلق: $pending'))),Text(message)]),const Divider(),...dates.map((d){final friday=d.weekday==DateTime.friday,a=analyze(d);final status=a['status']==1?'غياب':a['status']==2?'معلق':'حضور';return Card(child:ListTile(title:Text('${key(d)}${friday?' — الجمعة':''}'),subtitle:friday?const Text('إجازة الجمعة'):Text('${a['worked']!~/60}س ${a['worked']!%60}د | تأخير ${a['late']}د | مبكر ${a['early']}د | $status'),trailing:friday?null:Wrap(spacing:8,children:[OutlinedButton(onPressed:()=>pick(d,true),child:Text(ins[key(d)]?.format(context)??'الحضور')),OutlinedButton(onPressed:()=>pick(d,false),child:Text(outs[key(d)]?.format(context)??'الانصراف'))])));})]));
 }
