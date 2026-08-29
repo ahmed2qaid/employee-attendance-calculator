@@ -37,13 +37,13 @@ class AttendanceController extends Controller {
  }
  private function analyze(Carbon $date, ?Attendance $a, Employee $employee): array {
   $shift=$this->shiftForDate($date,$employee);
-  if($date->isFriday()) return ['minutes'=>0,'status'=>'friday','late'=>0,'early'=>0,'shift'=>$shift];
-  if(!$a?->check_in && !$a?->check_out) return ['minutes'=>0,'status'=>'absent','late'=>0,'early'=>0,'shift'=>$shift];
-  if(!$a?->check_in || !$a?->check_out) return ['minutes'=>0,'status'=>'pending','late'=>0,'early'=>0,'shift'=>$shift];
+  if($date->isFriday()) return ['minutes'=>0,'status'=>'friday','late'=>0,'early'=>0,'overtime'=>0,'shift'=>$shift];
+  if(!$a?->check_in && !$a?->check_out) return ['minutes'=>0,'status'=>'absent','late'=>0,'early'=>0,'overtime'=>0,'shift'=>$shift];
+  if(!$a?->check_in || !$a?->check_out) return ['minutes'=>0,'status'=>'pending','late'=>0,'early'=>0,'overtime'=>0,'shift'=>$shift];
   $minutes=$this->workedMinutes($date->format('Y-m-d'),$a->check_in,$a->check_out);
   $actualIn=Carbon::parse($date->format('Y-m-d').' '.$a->check_in); $actualOut=Carbon::parse($date->format('Y-m-d').' '.$a->check_out); $sIn=Carbon::parse($date->format('Y-m-d').' '.$shift['in']); $sOut=Carbon::parse($date->format('Y-m-d').' '.$shift['out']); if($actualOut->lte($actualIn))$actualOut->addDay();
-  $rawLate=$actualIn->gt($sIn)?$sIn->diffInMinutes($actualIn):0; $rawEarly=$actualOut->lt($sOut)?$actualOut->diffInMinutes($sOut):0; $lateGrace=(int)config('attendance.default_late_grace',15); $earlyGrace=(int)config('attendance.default_early_grace',5);
-  return ['minutes'=>$minutes,'status'=>'present','late'=>$rawLate>$lateGrace?$rawLate:0,'early'=>$rawEarly>$earlyGrace?$rawEarly:0,'shift'=>$shift];
+  $rawLate=$actualIn->gt($sIn)?$sIn->diffInMinutes($actualIn):0; $rawEarly=$actualOut->lt($sOut)?$actualOut->diffInMinutes($sOut):0; $overtime=$actualOut->gt($sOut)?$sOut->diffInMinutes($actualOut):0; $lateGrace=(int)config('attendance.default_late_grace',15); $earlyGrace=(int)config('attendance.default_early_grace',5);
+  return ['minutes'=>$minutes,'status'=>'present','late'=>$rawLate>$lateGrace?$rawLate:0,'early'=>$rawEarly>$earlyGrace?$rawEarly:0,'overtime'=>$overtime,'shift'=>$shift];
  }
- private function summary(array $days): array { $total=0;$complete=0;$pending=0;$absent=0;$fridays=0;$workDays=0;$late=0;$early=0; foreach($days as $d){ if($d['status']==='friday'){$fridays++;continue;} $workDays++; if($d['status']==='absent'){$absent++;continue;} if($d['status']==='pending'){$pending++;continue;} $complete++;$total+=$d['minutes'];$late+=$d['late'];$early+=$d['early']; } return ['total_minutes'=>$total,'hours_whole'=>intdiv($total,60),'minutes_remainder'=>$total%60,'decimal_hours'=>$total/60,'equivalent_days'=>$total/480,'complete_days'=>$complete,'pending_days'=>$pending,'absent_days'=>$absent,'fridays'=>$fridays,'calendar_work_days'=>$workDays,'late_minutes'=>$late,'early_minutes'=>$early]; }
+ private function summary(array $days): array { $total=0;$complete=0;$pending=0;$absent=0;$fridays=0;$workDays=0;$late=0;$early=0;$overtime=0; foreach($days as $d){ if($d['status']==='friday'){$fridays++;continue;} $workDays++; if($d['status']==='absent'){$absent++;continue;} if($d['status']==='pending'){$pending++;continue;} $complete++;$total+=$d['minutes'];$late+=$d['late'];$early+=$d['early'];$overtime+=$d['overtime']; } return ['total_minutes'=>$total,'hours_whole'=>intdiv($total,60),'minutes_remainder'=>$total%60,'decimal_hours'=>$total/60,'equivalent_days'=>$total/480,'complete_days'=>$complete,'pending_days'=>$pending,'absent_days'=>$absent,'fridays'=>$fridays,'calendar_work_days'=>$workDays,'late_minutes'=>$late,'early_minutes'=>$early,'overtime_minutes'=>$overtime]; }
 }
