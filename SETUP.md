@@ -1,17 +1,40 @@
-# Flutter Web + Supabase
+# تهيئة Flutter Web + Supabase
 
-1. Create a Supabase project.
-2. Run `supabase/schema.sql` in the Supabase SQL editor.
-3. From this branch run `flutter create .` once to regenerate any missing platform scaffold files.
-4. Run `flutter pub get`.
-5. Start locally with:
+هذه النسخة قابلة للنقل لأي مستخدم أو مشروع Supabase جديد بدون تغيير منطق التطبيق.
 
-`flutter run -d chrome --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co --dart-define=SUPABASE_ANON_KEY=YOUR_ANON_KEY`
+## 1) Supabase
+1. أنشئ مشروع Supabase جديدًا.
+2. افتح SQL Editor.
+3. شغّل `supabase/schema.sql`.
 
-6. Production build:
+## 2) تجهيز Flutter
+```bash
+flutter create .
+flutter pub get
+```
 
-`flutter build web --release --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co --dart-define=SUPABASE_ANON_KEY=YOUR_ANON_KEY`
+## 3) التشغيل المحلي
+مرر بيانات Supabase كإعدادات بناء بدل كتابتها داخل الكود:
 
-Deploy the generated `build/web` folder to Netlify.
+```bash
+flutter run -d chrome \
+  --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=YOUR_ANON_KEY
+```
 
-> Security note: the included RLS policies are open for prototype testing. Add authentication and restricted policies before production use.
+## 4) بناء نسخة Web
+```bash
+flutter build web --release \
+  --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=YOUR_ANON_KEY
+```
+
+ارفع مجلد `build/web` إلى Netlify أو أي استضافة static.
+
+## المرونة
+- لا توجد بيانات Supabase خاصة بالمطور داخل المستودع.
+- كل مستخدم ينشئ قاعدة بياناته عبر `supabase/schema.sql`.
+- تغيير Supabase يتم فقط عبر `--dart-define`.
+- يمكن لاحقًا استخدام نفس الكود لـ Android وiOS مع نفس Supabase.
+
+> قبل الإنتاج: أضف Supabase Auth وRLS مقيدًا بالمستخدم/المؤسسة.
