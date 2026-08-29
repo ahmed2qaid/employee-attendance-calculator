@@ -9,15 +9,13 @@ return new class extends Migration {
     {
         Schema::table('employees', function (Blueprint $table) {
             $table->string('shift_type', 20)->default('morning');
-            $table->unsignedInteger('late_grace')->default(15);
-            $table->unsignedInteger('early_grace')->default(5);
         });
     }
 
     public function down(): void
     {
         Schema::table('employees', function (Blueprint $table) {
-            $table->dropColumn(['shift_type', 'late_grace', 'early_grace']);
+            $table->dropColumn('shift_type');
         });
     }
 };
